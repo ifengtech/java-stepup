@@ -1,5 +1,12 @@
 package com.ifengtech.www.textual;
 
+import java.io.EOFException;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -11,8 +18,10 @@ import java.util.GregorianCalendar;
  * 仿iPhone备忘录列表右侧显示的日期
  * 
  */
-public class SmartDate {
+public class SmartDate implements Serializable {
 	
+	private static final long serialVersionUID = -1853902075182832328L;
+
 	private static final String SIMPLE_DATE_FORMAT = "M/dd";
 	
 	private static final String FULL_DATE_FORMAT = "Y/M/dd";
@@ -21,7 +30,19 @@ public class SmartDate {
 	
 	private static final String NORMAL_DATETIME_FORMAT = "Y/M/d HH:mm:ss";
     
-    private long mNanoTime;
+    private /*transient*/ long mNanoTime;
+    
+    private transient boolean mImmutable = false;
+    
+    public SmartDate() {
+    	// so that mNanoTime be set only once
+    	mImmutable = false;
+    }
+
+    public SmartDate(long milliseconds) {
+        mNanoTime = milliseconds;
+        mImmutable = true;
+    }
     
     public SmartDate(String format, String date) {
     	try {
@@ -30,24 +51,70 @@ public class SmartDate {
 		} catch (ParseException e) {
 			e.printStackTrace();
 		}
+    	
+    	mImmutable = true;
     }
 
-    public SmartDate(long milliseconds) {
-        mNanoTime = milliseconds;
-    }
-    
     public static void main(String[] args) {
-    	SmartDate date = new SmartDate(System.currentTimeMillis() - 300000000L);
+    	SmartDate date = null;
+    	
+    	
+    	date = new SmartDate();
+    	FileOutputStream fout;
+    	ObjectOutputStream out = null;
+    	try {
+    		fout = new FileOutputStream(new File("./asset/SmartDate/obj_ar.dat"), true);
+			out = new ObjectOutputStream(fout);
+			out.writeObject(date);
+		} catch (IOException e) {
+			e.printStackTrace();
+		} finally {
+			try {
+				out.close();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+    	
+    	/*
+    	FileInputStream fin;
+    	ObjectInputStream in = null;
+    	try {
+			fin = new FileInputStream(new File("./asset/SmartDate/obj_ar.dat"));
+			in = new ObjectInputStream(fin);
+			date = (SmartDate) in.readObject();
+		} catch (IOException | ClassNotFoundException e) {
+			e.printStackTrace();
+		} finally {
+			try {
+				in.close();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}*/
+
+    	try {
+    		date.setNanoTime(System.currentTimeMillis());
+    	} catch (ImmutableException e) {
+    		e.printStackTrace();
+    	}
+    	
     	System.out.println(date);
     	System.out.println(date.getNormalDatetime());
+    	
     }
 
     public long getNanoTime() {
         return mNanoTime;
     }
 
-    public void setNanoTime(long nanoTime) {
-        this.mNanoTime = nanoTime;
+    public void setNanoTime(long nanoTime) throws ImmutableException {
+    	if(!mImmutable && mNanoTime <= 0) {
+    		this.mNanoTime = nanoTime;
+    		mImmutable = true;
+    	} else {
+    		throw new ImmutableException("对象的时间差不可更改");
+    	}
     }
 
     private boolean isThisYear() {
@@ -59,7 +126,8 @@ public class SmartDate {
         return calL.get(Calendar.YEAR) == calR.get(Calendar.YEAR);
     }
     
-    private boolean isThisMouth() {
+    @SuppressWarnings("unused")
+	private boolean isThisMouth() {
     	GregorianCalendar calL = new GregorianCalendar();
         GregorianCalendar calR = new GregorianCalendar();
         calL.setTimeInMillis(mNanoTime);
@@ -160,5 +228,35 @@ public class SmartDate {
     public String getNormalDatetime() {
     	DateFormat format = new SimpleDateFormat(NORMAL_DATETIME_FORMAT);
     	return format.format(new Date(mNanoTime));
+    }
+    
+    private void writeObject(ObjectOutputStream oos) throws IOException {
+    	oos.defaultWriteObject();	// write mNanoTime
+    	
+    	if(mImmutable) {
+    		oos.writeBoolean(mImmutable);
+    	}
+    }
+    
+    private void readObject(ObjectInputStream ois) throws ClassNotFoundException, IOException {
+    	ois.defaultReadObject();
+    	try {
+			mImmutable = ois.readBoolean();
+		} catch (EOFException e) {
+			// ignore it
+		}
+    }
+    
+    class ImmutableException extends SecurityException {
+    	
+		private static final long serialVersionUID = 5130986246839523392L;
+
+		public ImmutableException() {
+    		super();
+    	}
+    	
+    	public ImmutableException(String message) {
+    		super(message);
+    	}
     }
 }
